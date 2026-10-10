@@ -1,0 +1,19 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Model weights (download separately, see README)
+*.pt
+*.onnx
+
+# Runtime data (fills from real runs, never committed)
+data/incidents.json
+data/snapshots/*.jpg
+
+# Node
+node_modules/
+
+# OS
+.DS_Store

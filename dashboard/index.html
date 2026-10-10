@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SiteGuard — Workplace Safety Monitor (Stage I prototype)</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+  :root { --bg:#0f1419; --panel:#1a2230; --green:#2ecc71; --red:#e74c3c;
+          --amber:#f39c12; --text:#e8eef5; --muted:#8a97a8; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); font-family:system-ui,sans-serif; padding:16px; }
+  header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+  h1 { font-size:1.4rem; }
+  .badge { font-size:.7rem; padding:3px 10px; border-radius:20px; background:#3a2b00; color:var(--amber); border:1px solid var(--amber); }
+  .grid { display:grid; grid-template-columns:2fr 1fr; gap:12px; }
+  .panel { background:var(--panel); border-radius:10px; padding:12px; }
+  .panel h2 { font-size:.95rem; margin-bottom:8px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+  #feed { width:100%; border-radius:6px; background:#000; min-height:240px; display:block; }
+  .stats { display:flex; gap:16px; margin-top:8px; font-size:.85rem; color:var(--muted); }
+  .stats b { color:var(--text); }
+  #alerts { display:flex; flex-direction:column; gap:8px; max-height:180px; overflow-y:auto; }
+  .alert { padding:10px; border-radius:6px; font-size:.9rem; border-left:4px solid; }
+  .alert.warning { background:#3a2b00; border-color:var(--amber); }
+  .alert.alert { background:#3d1a12; border-color:#e67e22; }
+  .alert.critical { background:#3d1212; border-color:var(--red); animation:pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity:.75; } }
+  table { width:100%; border-collapse:collapse; font-size:.82rem; }
+  th,td { text-align:left; padding:6px 4px; border-bottom:1px solid #2a3547; }
+  th { color:var(--muted); font-weight:600; }
+  .sev { padding:2px 8px; border-radius:12px; font-size:.72rem; }
+  .sev.warning { background:#3a2b00; color:var(--amber); }
+  .sev.alert { background:#3d1a12; color:#e67e22; }
+  .sev.critical { background:#3d1212; color:var(--red); }
+  button.ack { background:#2a3547; color:var(--text); border:none; padding:4px 10px; border-radius:4px; cursor:pointer; }
+  button.ack:hover { background:#3a4a63; }
+  .zone { display:flex; align-items:center; gap:8px; padding:10px; background:#14201a; border-radius:6px; margin-bottom:8px; }
+  .dot { width:12px; height:12px; border-radius:50%; background:var(--green); }
+  .dot.bad { background:var(--red); }
+  .prov { margin-top:12px; padding:10px; background:#141a24; border:1px dashed #4a5a73; border-radius:6px; font-size:.78rem; color:var(--muted); }
+  .empty { color:var(--muted); font-size:.85rem; padding:8px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🦺 SiteGuard <span style="color:var(--muted);font-weight:400;">— live safety monitor</span></h1>
+  <!-- Honesty label: visible provenance badge (FR-9). -->
+  <span class="badge">STAGE I PROTOTYPE · SIMULATION</span>
+</header>
+
+<div class="grid">
+  <div>
+    <div class="panel">
+      <h2>Live feed</h2>
+      <img id="feed" alt="annotated camera feed">
+      <div class="stats">
+        <span>FPS <b id="fps">–</b></span>
+        <span>Persons in frame <b id="persons">–</b></span>
+        <span>Zone <b id="zone">Zone A</b></span>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:12px;">
+      <h2>Incident log</h2>
+      <div id="log-empty" class="empty">No incidents yet — the log fills only from real pipeline runs.</div>
+      <table id="log-table" style="display:none;">
+        <thead><tr><th>#</th><th>Time</th><th>Zone</th><th>Type</th><th>Severity</th><th>Status</th><th></th></tr></thead>
+        <tbody id="log-body"></tbody>
+      </table>
+    </div>
+  </div>
+  <div>
+    <div class="panel">
+      <h2>Zone compliance</h2>
+      <div class="zone"><span class="dot" id="zone-dot"></span><span><b>Zone A</b> — <span id="zone-status">compliant</span></span></div>
+    </div>
+    <div class="panel" style="margin-top:12px;">
+      <h2>Active alerts</h2>
+      <div id="alerts"><div class="empty">No active alerts.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Honesty label: detection provenance, rendered from the server (FR-9). -->
+<div class="prov" id="provenance">Loading detection provenance…</div>
+
+<script>
+const socket = io();
+const feed = document.getElementById('feed');
+
+socket.on('frame', (f) => {
+  feed.src = 'data:image/jpeg;base64,' + f.jpegBase64;
+});
+socket.on('stats', (s) => {
+  document.getElementById('fps').textContent = s.fps;
+  document.getElementById('persons').textContent = s.persons;
+  document.getElementById('zone').textContent = s.zone || 'Zone A';
+});
+socket.on('provenance', (p) => {
+  document.getElementById('provenance').textContent = '⚖️ ' + p.detection;
+});
+socket.on('alert', (a) => {
+  const box = document.getElementById('alerts');
+  const empty = box.querySelector('.empty');
+  if (empty) empty.remove();
+  const div = document.createElement('div');
+  div.className = 'alert ' + a.severity;
+  div.innerHTML = `<b>${a.severity.toUpperCase()}</b> — ${a.message}`;
+  box.prepend(div);
+  document.getElementById('zone-dot').classList.add('bad');
+  document.getElementById('zone-status').textContent = 'violation active';
+  setTimeout(() => {
+    document.getElementById('zone-dot').classList.remove('bad');
+    document.getElementById('zone-status').textContent = 'compliant';
+  }, 15000);
+});
+function renderIncident(inc) {
+  document.getElementById('log-empty').style.display = 'none';
+  const table = document.getElementById('log-table');
+  table.style.display = '';
+  const body = document.getElementById('log-body');
+  let row = document.getElementById('inc-' + inc.id);
+  if (!row) {
+    row = document.createElement('tr');
+    row.id = 'inc-' + inc.id;
+    body.prepend(row);
+  }
+  const t = new Date(inc.ts).toLocaleTimeString();
+  row.innerHTML = `<td>${inc.id}</td><td>${t}</td><td>${inc.zone}</td>` +
+    `<td>${inc.type}</td><td><span class="sev ${inc.severity}">${inc.severity}</span></td>` +
+    `<td>${inc.status}</td>` +
+    `<td>${inc.status === 'open' ? `<button class="ack" onclick="ack(${inc.id})">Acknowledge</button>` : ''}</td>`;
+}
+socket.on('incident', renderIncident);
+socket.on('incidents', (list) => list.forEach(renderIncident));
+function ack(id) {
+  fetch('/api/incidents/' + id + '/ack', { method: 'POST' });
+}
+</script>
+</body>
+</html>
