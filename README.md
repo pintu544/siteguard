@@ -53,11 +53,10 @@ video file / webcam
 Prerequisites: Python 3.12, Node.js 18+, `pip`, `npm`.
 
 ```bash
-# 1. Vision worker
+# 1. Vision worker (pinned deps, CPU-only torch)
 cd vision-worker
 python3 -m venv venv
-./venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
-./venv/bin/pip install ultralytics opencv-python-headless requests numpy
+./venv/bin/pip install -r requirements.txt   # Windows: venv\Scripts\pip install -r requirements.txt
 
 # 2. PPE model weights (MIT) — NOT in the repo, download once:
 mkdir -p models
@@ -70,6 +69,23 @@ npm install
 ```
 
 ## Run
+
+One command (starts server + worker, opens the dashboard; Ctrl+C stops):
+
+```bash
+./demo.sh            # Linux/macOS — tuned demo clip
+./demo.sh --webcam   # Linux/macOS — your webcam
+```
+```bat
+demo.bat             :: Windows (cmd) — tuned demo clip
+demo.bat --webcam    :: Windows (cmd) — your webcam
+```
+```powershell
+.\demo.ps1           # Windows (PowerShell) — tuned demo clip
+.\demo.ps1 -Webcam   # Windows (PowerShell) — your webcam
+```
+
+Manual (three terminals) if you prefer:
 
 Terminal 1 — API server:
 ```bash
@@ -121,6 +137,23 @@ own hardware before quoting a number.
 | Input footage | **Sample** — royalty-free Coverr stock clip (commercial-use license, no attribution required). Not a live site. |
 | "Agent" reasoning | **Rule-based** in Stage I (labeled as such). LLM summarization is Stage II. |
 | Deployment target | **Laptop** in Stage I. Thunderstorm VM (Intel Arc Pro B70) is the Stage II target — see the proposal deck. |
+
+## Privacy & responsible use
+
+- **Local processing:** video never leaves the machine (Stage I) / the site
+  network (Stage II). No cloud uploads, no third-party analytics.
+- **No facial recognition:** the model detects *persons* and *hard hats* only.
+  No face detection, no identity matching, no biometric templates — by design,
+  not just by policy.
+- **Configurable retention:** snapshots and the incident log live in `data/`
+  (gitignored). Retention is a deployment setting: keep the rolling window
+  your site policy requires, purge the rest.
+- **Human review before action:** SiteGuard raises *alerts for supervisors*,
+  not automated penalties. The dashboard's acknowledge flow exists so a human
+  confirms every incident before any disciplinary use.
+- **Visible honesty:** the dashboard and every public artifact carry a
+  `STAGE I PROTOTYPE · SIMULATION` label and a detection-provenance note, so
+  no one mistakes the demo for a certified safety system.
 
 ## Sample footage provenance
 

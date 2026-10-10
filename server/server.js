@@ -75,6 +75,7 @@ function severityFor(violationFrames) {
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, '..', 'dashboard')));
+app.use('/snapshots', express.static(SNAPSHOT_DIR));
 
 const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 10 * 1024 * 1024 });
@@ -84,6 +85,20 @@ let latestFrame = null;
 let stats = { fps: 0, persons: 0, frames: 0, startedAt: Date.now() };
 
 app.get('/api/incidents', (req, res) => res.json(incidents));
+
+// One-click audit export: the incident log as CSV (opens in Excel/Sheets).
+app.get('/api/incidents/export', (req, res) => {
+  const cols = ['id', 'timestamp', 'zone', 'type', 'trackId', 'severity', 'status', 'resolvedAt'];
+  const esc = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  const lines = [cols.join(',')];
+  for (const i of incidents) {
+    lines.push([i.id, i.ts, i.zone, i.type, i.trackId, i.severity, i.status, i.resolvedAt]
+      .map(esc).join(','));
+  }
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="siteguard-incidents.csv"');
+  res.send(lines.join('\n'));
+});
 
 app.post('/api/incidents/:id/ack', (req, res) => {
   const inc = incidents.find(i => i.id === Number(req.params.id));

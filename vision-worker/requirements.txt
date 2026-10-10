@@ -1,0 +1,15 @@
+# SiteGuard vision-worker dependencies — pinned to the versions verified in the
+# Stage I build (2026-10-10).
+#
+# Install (CPU-only torch, all platforms):
+#   python -m venv venv
+#   venv/bin/pip install -r requirements.txt        (Linux/macOS)
+#   venv\Scripts\pip install -r requirements.txt    (Windows)
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+numpy==2.5.3
+opencv-python==5.0.0.93
+requests==2.34.2
+torch==2.14.1+cpu
+torchvision==0.29.1+cpu
+ultralytics==8.4.175
