@@ -26,8 +26,10 @@ const INCIDENTS_FILE = path.join(DATA_DIR, 'incidents.json');
 const SNAPSHOT_DIR = path.join(DATA_DIR, 'snapshots');
 
 // Policy knobs (env-overridable).
-const CONFIRM_FRAMES = parseInt(process.env.CONFIRM_FRAMES || '5', 10); // N consecutive frames
-const ESCALATE_AFTER = parseInt(process.env.ESCALATE_AFTER || '3', 10); // repeat incidents -> escalate
+const CONFIRM_FRAMES = parseInt(process.env.CONFIRM_FRAMES || '5', 10); // consecutive violation frames to OPEN an incident
+const CLEAR_FRAMES = parseInt(process.env.CLEAR_FRAMES || '10', 10);    // consecutive clean frames to CLOSE the episode
+const ESCALATE_ALERT_FRAMES = parseInt(process.env.ESCALATE_ALERT_FRAMES || '15', 10);       // cumulative violation frames -> alert
+const ESCALATE_CRITICAL_FRAMES = parseInt(process.env.ESCALATE_CRITICAL_FRAMES || '30', 10); // cumulative violation frames -> critical
 
 // Detection provenance label — shown verbatim in the dashboard (honesty rule).
 const DETECTION_PROVENANCE =
@@ -52,17 +54,19 @@ function saveIncidents(list) {
 let incidents = loadIncidents();
 let nextId = incidents.reduce((m, i) => Math.max(m, i.id || 0), 0) + 1;
 
-// Per-zone policy state (single logical "Zone A" for Stage I).
+// Per-zone episode state (single logical "Zone A" for Stage I).
+// One continuous violation = ONE episode = ONE incident. The incident
+// escalates in place as the violation persists, and the episode closes only
+// after the violation genuinely clears. A later, separate violation opens a
+// new incident. Episode state is in-memory; the incident log persists.
 const zoneState = {
   name: 'Zone A',
-  noHatStreak: 0,      // consecutive frames with >=1 person missing a hard hat
-  repeatCount: 0,      // confirmed incidents in this zone (drives escalation)
-  lastIncidentAt: 0,
+  episode: null, // { violationFrames, clearStreak, incidentId } | null
 };
 
-function severityFor(repeatCount) {
-  if (repeatCount >= ESCALATE_AFTER * 2) return 'critical';
-  if (repeatCount >= ESCALATE_AFTER) return 'alert';
+function severityFor(violationFrames) {
+  if (violationFrames >= ESCALATE_CRITICAL_FRAMES) return 'critical';
+  if (violationFrames >= ESCALATE_ALERT_FRAMES) return 'alert';
   return 'warning';
 }
 
@@ -93,9 +97,12 @@ app.get('/api/provenance', (req, res) => res.json({ detection: DETECTION_PROVENA
 
 /**
  * PERCEIVE -> REASON -> ACT.
- * A violation is confirmed only after CONFIRM_FRAMES consecutive frames in
- * which at least one tracked person has no hard hat. Single-frame flicker
- * never raises an alert.
+ * One continuous violation opens exactly ONE incident (after CONFIRM_FRAMES
+ * consecutive violation frames — single-frame flicker never raises an alert).
+ * While the violation persists, the SAME incident escalates warning -> alert
+ * -> critical. The episode closes after CLEAR_FRAMES consecutive clean
+ * frames, marking the incident resolved. A later, separate violation opens a
+ * new incident.
  */
 app.post('/api/detections', (req, res) => {
   const { frameId, persons = [] } = req.body || {};
@@ -103,37 +110,64 @@ app.post('/api/detections', (req, res) => {
   stats.persons = persons.length;
   stats.frames += 1;
 
+  let ep = zoneState.episode;
   if (violators.length > 0) {
-    zoneState.noHatStreak += 1;
-  } else {
-    zoneState.noHatStreak = 0;
-  }
+    if (!ep) ep = zoneState.episode = { violationFrames: 0, clearStreak: 0, incidentId: null };
+    ep.violationFrames += 1;
+    ep.clearStreak = 0;
 
-  if (zoneState.noHatStreak >= CONFIRM_FRAMES) {
-    zoneState.noHatStreak = 0; // reset; a new streak starts a new incident
-    zoneState.repeatCount += 1;
-    const severity = severityFor(zoneState.repeatCount);
-    const incident = {
-      id: nextId++,
-      ts: new Date().toISOString(),
-      zone: zoneState.name,
-      type: 'missing_hard_hat',
-      frames: CONFIRM_FRAMES,
-      violators: violators.length,
-      severity,
-      snapshotPath: null, // attached by /api/frames when the frame arrives
-      status: 'open',
-      provenance: 'rule-based policy engine (Stage I)',
-    };
-    incidents.push(incident);
-    saveIncidents(incidents);
-    io.emit('incident', incident);
-    io.emit('alert', {
-      incidentId: incident.id,
-      severity,
-      message: `${violators.length} person(s) without hard hat in ${zoneState.name} — ${severity.toUpperCase()}`,
-    });
-    console.log(`[policy] incident #${incident.id} (${severity}) — ${violators.length} violator(s)`);
+    if (!ep.incidentId && ep.violationFrames >= CONFIRM_FRAMES) {
+      const incident = {
+        id: nextId++,
+        ts: new Date().toISOString(),
+        zone: zoneState.name,
+        type: 'missing_hard_hat',
+        frames: CONFIRM_FRAMES,
+        violators: violators.length,
+        severity: 'warning',
+        snapshotPath: null, // attached by /api/frames when the frame arrives
+        status: 'open',
+        provenance: 'rule-based policy engine (Stage I)',
+      };
+      incidents.push(incident);
+      saveIncidents(incidents);
+      ep.incidentId = incident.id;
+      io.emit('incident', incident);
+      io.emit('alert', {
+        incidentId: incident.id,
+        severity: 'warning',
+        message: `${violators.length} person(s) without hard hat in ${zoneState.name} — WARNING (incident #${incident.id})`,
+      });
+      console.log(`[policy] incident #${incident.id} opened (warning) — ${violators.length} violator(s)`);
+    } else if (ep.incidentId) {
+      const inc = incidents.find(i => i.id === ep.incidentId);
+      const sev = severityFor(ep.violationFrames);
+      if (inc && sev !== inc.severity) {
+        inc.severity = sev;
+        inc.escalatedAt = new Date().toISOString();
+        saveIncidents(incidents);
+        io.emit('incident', inc);
+        io.emit('alert', {
+          incidentId: inc.id,
+          severity: sev,
+          message: `Incident #${inc.id} escalated to ${sev.toUpperCase()} — violation persists in ${zoneState.name}`,
+        });
+        console.log(`[policy] incident #${inc.id} escalated to ${sev}`);
+      }
+    }
+  } else if (ep) {
+    ep.clearStreak += 1;
+    if (ep.clearStreak >= CLEAR_FRAMES) {
+      const inc = incidents.find(i => i.id === ep.incidentId);
+      if (inc && inc.status === 'open') {
+        inc.status = 'resolved';
+        inc.resolvedAt = new Date().toISOString();
+        saveIncidents(incidents);
+        io.emit('incident', inc);
+        console.log(`[policy] incident #${inc.id} resolved — violation cleared`);
+      }
+      zoneState.episode = null;
+    }
   }
 
   res.status(202).json({ ok: true, frameId });
@@ -175,5 +209,5 @@ setInterval(() => {
 
 server.listen(PORT, () => {
   console.log(`[server] listening on http://localhost:${PORT}`);
-  console.log(`[server] confirm-frames=${CONFIRM_FRAMES} escalate-after=${ESCALATE_AFTER}`);
+  console.log(`[server] confirm-frames=${CONFIRM_FRAMES} clear-frames=${CLEAR_FRAMES} escalate=${ESCALATE_ALERT_FRAMES}/${ESCALATE_CRITICAL_FRAMES}`);
 });
