@@ -4,7 +4,7 @@
 **Team:** Pintu Kumar (solo) · **Stage I deadline:** Oct 14, 2026, 14:30 IST
 **Repo:** https://github.com/pintu544/siteguard
 
-16 slides total (≤20-page cap respected). One section per slide: title, bullets, speaker notes.
+17 slides total (≤20-page cap respected). One section per slide: title, bullets, speaker notes.
 
 ---
 
