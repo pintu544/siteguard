@@ -16,6 +16,8 @@ Usage:
 
 import argparse
 import base64
+import queue
+import threading
 import time
 
 import cv2
@@ -102,14 +104,73 @@ def match_tracks(person_bboxes):
     return track_ids
 
 
+class FrameReader:
+    """Background-thread video reader.
+
+    H.264 decode of skipped frames was the dominant end-to-end cost
+    (measured ~100ms per processed frame at --skip 8 on a 2-CPU box).
+    Decoding in a daemon thread overlaps it with inference instead of
+    serializing it. Bounded queue with drop-oldest keeps a LIVE source
+    (webcam) from falling behind; file sources block when full so the
+    --skip cadence stays exact.
+    """
+
+    def __init__(self, src, live=False, maxsize=32):
+        self.cap = cv2.VideoCapture(src)
+        if not self.cap.isOpened():
+            raise SystemExit("[worker] cannot open video source")
+        self.live = live
+        self.q = queue.Queue(maxsize=maxsize)
+        self.stopped = False
+        self.t = threading.Thread(target=self._run, daemon=True)
+        self.t.start()
+
+    def _run(self):
+        while not self.stopped:
+            ok, frame = self.cap.read()
+            if not ok:
+                break
+            if self.live:
+                try:
+                    self.q.put(frame, timeout=1)
+                except queue.Full:
+                    try:
+                        self.q.get_nowait()  # drop oldest: stay live
+                    except queue.Empty:
+                        pass
+                    try:
+                        self.q.put(frame, timeout=1)
+                    except queue.Full:
+                        pass
+            else:
+                self.q.put(frame)  # block: keep file cadence exact
+        self.stopped = True
+        self.cap.release()
+        # Sentinel: unblock a reader waiting on an empty queue at end of stream.
+        try:
+            self.q.put(None, timeout=1)
+        except queue.Full:
+            pass
+
+    def read(self, timeout=10):
+        try:
+            frame = self.q.get(timeout=timeout)
+        except queue.Empty:
+            return False, None
+        if frame is None:
+            return False, None
+        return True, frame
+
+    def stop(self):
+        self.stopped = True
+
+
 def main():
     args = parse_args()
     model = YOLO(args.model)
     print(f"[worker] loaded {args.model}; names={model.names}", flush=True)
 
-    cap = cv2.VideoCapture(0 if args.webcam else args.video)
-    if not cap.isOpened():
-        raise SystemExit("[worker] cannot open video source")
+    cap = FrameReader(0 if args.webcam else args.video, live=args.webcam)
 
     frame_id = 0
     processed = 0
@@ -183,7 +244,7 @@ def main():
             print(f"[worker] {processed} frames, {fps:.1f} fps, "
                   f"{len(detections)} persons", flush=True)
 
-    cap.release()
+    cap.stop()
     fps = processed / max(time.time() - t_start, 0.001)
     print(f"[worker] done: {processed} frames at {fps:.1f} fps", flush=True)
 

@@ -12,7 +12,10 @@ Construction sites lose workers to preventable head injuries, yet PPE compliance
 - FR-2: The system SHALL detect persons per processed frame using real YOLOv8n inference (ultralytics).
 - FR-3: The system SHALL classify hard-hat presence per detected person via a pretrained PPE model; if the T1 spike finds no reliable license-clear model, a heuristic MAY stand in, and the UI/README/deck SHALL label it "SIMULATED".
 - FR-4: The policy engine SHALL raise a violation alert only after N consecutive frames of the same person without a hard hat (N configurable, default 5) — no single-frame false alarms.
-- FR-5: The system SHALL escalate repeat violations per zone: warning → alert → critical, with each transition logged.
+- FR-5: The system SHALL open exactly one incident per continuous violation by
+  the same tracked person, escalating it in place (warning → alert → critical)
+  as the violation persists, and mark it resolved once the violation genuinely
+  clears; each transition is logged.
 - FR-6: The system SHALL stream annotated frames and alerts to the dashboard over WebSocket with end-to-end alert latency < 2s on a laptop.
 - FR-7: The system SHALL append every confirmed violation to an incident log (`data/incidents.json`) with timestamp, zone, violation type, and snapshot path; the log starts empty and fills only from real pipeline runs.
 - FR-8: The dashboard SHALL show the live annotated feed, per-zone compliance status, active alerts, and the incident log.

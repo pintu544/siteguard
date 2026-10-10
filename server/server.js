@@ -28,7 +28,7 @@ const SNAPSHOT_DIR = path.join(DATA_DIR, 'snapshots');
 
 // Policy knobs (env-overridable).
 const CONFIRM_FRAMES = parseInt(process.env.CONFIRM_FRAMES || '5', 10); // consecutive violation frames to OPEN an incident
-const CLEAR_FRAMES = parseInt(process.env.CLEAR_FRAMES || '10', 10);    // consecutive clean frames to CLOSE the episode
+const CLEAR_FRAMES = parseInt(process.env.CLEAR_FRAMES || '20', 10);    // consecutive clean frames to CLOSE the episode
 const ESCALATE_ALERT_FRAMES = parseInt(process.env.ESCALATE_ALERT_FRAMES || '15', 10);       // cumulative violation frames -> alert
 const ESCALATE_CRITICAL_FRAMES = parseInt(process.env.ESCALATE_CRITICAL_FRAMES || '30', 10); // cumulative violation frames -> critical
 

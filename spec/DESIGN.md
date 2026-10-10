@@ -7,7 +7,7 @@ Three processes on one laptop, all localhost:
 - **api-server** (Node.js + Express, port 3000): receives detection events at `POST /api/detections` and frames at `POST /api/frames`; runs the **policy engine**; broadcasts `frame`, `alert`, and `incident` events over Socket.IO; serves the dashboard static page; persists incidents to `data/incidents.json` and snapshots to `data/snapshots/`.
 - **dashboard** (single `index.html` + vanilla JS + Socket.IO client): renders the live annotated feed, per-zone compliance chips, an alert banner stack, and the incident log table. No build step.
 
-Data flow: camera/file → vision-worker → (HTTP) → api-server → (Socket.IO) → dashboard. The policy engine is the "agent": it holds per-zone state across frames and only acts on confirmed, repeated violations.
+Data flow: camera/file → vision-worker → (HTTP) → api-server → (Socket.IO) → dashboard. The policy engine is the "agent": it holds per-person episode state across frames (the worker's lightweight bbox tracker gives each person a stable trackId) and only acts on confirmed violations by the same person — one incident per continuous violation, escalated in place, resolved on clear.
 
 ## Data model
 - **Detection** (transient, per frame): `{ frameId, ts, persons: [{ bbox:[x1,y1,x2,y2], hardHat: bool, confidence: float }] }`

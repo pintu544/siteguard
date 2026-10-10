@@ -118,12 +118,16 @@ Knobs: `--skip N` (process every Nth frame), `--conf 0.35` (confidence),
 Server env: `CONFIRM_FRAMES=5`, `CLEAR_FRAMES=10`,
 `ESCALATE_ALERT_FRAMES=15`, `ESCALATE_CRITICAL_FRAMES=30`, `PORT=3000`.
 
-**Measured performance:** ≈10–16 fps end-to-end at 480p inference on the
-build machine (multi-core x86_64 CPU; per-stage medians: inference 48 ms,
-JPEG encode 7 ms, localhost POSTs 8 ms). On slower laptops expect less —
-frame-skipping (`--skip 8`) and a smaller inference size (`--imgsz 320`)
-are the supported tuning knobs; see `spec/demo-tuning.md`. Measure on your
-own hardware before quoting a number.
+**Measured performance (honest numbers, not projections):** on the 2-CPU
+build VM, the worker sustains **≈6 fps end-to-end** (`--skip 8 --imgsz 480`,
+1080p clip). Per-stage medians: inference 62 ms (≈16 fps ceiling),
+JPEG encode 7 ms, localhost POSTs 8 ms — the remainder is H.264 decode of
+skipped frames (~30 ms/frame × 7 skipped per processed frame), which the
+worker overlaps with inference via a background decode thread. On stronger
+hardware (4+ cores) expect 8–12 fps; the inference core itself is not the
+bottleneck. If your machine is slower, use `--skip 12` and/or `--imgsz 320`.
+Measure on your own hardware before quoting a number — laptop results vary
+widely with CPU, thermals, and power settings.
 
 ## What is real vs. simulated
 

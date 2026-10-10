@@ -78,7 +78,7 @@ test('confirmation: 5 consecutive frames by the same person open one incident', 
   assert.equal(inc[0].severity, 'warning');
   assert.equal(inc[0].status, 'open');
   assert.equal(inc[0].trackId, 7);
-  await frames(10, []); // resolve
+  await frames(20, []); // resolve
 });
 
 test('one continuous violation stays one incident and escalates in place', async () => {
@@ -95,7 +95,7 @@ test('one continuous violation stays one incident and escalates in place', async
   await frames(5, [[3, false]]);
   inc = await incidents();
   assert.equal(inc.filter((i) => i.trackId === 3).length, 1, 'still exactly one incident for track 3');
-  await frames(10, []);
+  await frames(20, []);
   inc = await incidents();
   assert.equal(inc.find((i) => i.id === id).status, 'resolved');
 });
@@ -106,14 +106,14 @@ test('different people violating open separate incidents', async () => {
   const mine = inc.filter((i) => i.trackId === 11 || i.trackId === 12);
   assert.equal(mine.length, 2);
   assert.ok(mine.every((i) => i.severity === 'warning'));
-  await frames(10, []);
+  await frames(20, []);
 });
 
 test('a genuinely repeated event opens a new incident', async () => {
   await frames(5, [[21, false]]);
   let inc = await incidents();
   const first = inc[inc.length - 1].id;
-  await frames(10, []); // cleared -> resolved
+  await frames(20, []); // cleared -> resolved
   inc = await incidents();
   assert.equal(inc.find((i) => i.id === first).status, 'resolved');
   await frames(5, [[21, false]]); // same person violates again later
@@ -121,7 +121,7 @@ test('a genuinely repeated event opens a new incident', async () => {
   const second = inc[inc.length - 1].id;
   assert.notEqual(second, first);
   assert.equal(inc.find((i) => i.id === second).severity, 'warning');
-  await frames(10, []);
+  await frames(20, []);
 });
 
 test('acknowledgement marks the incident', async () => {
@@ -132,5 +132,5 @@ test('acknowledgement marks the incident', async () => {
   assert.equal(r.status, 200);
   inc = await incidents();
   assert.equal(inc.find((i) => i.id === id).status, 'acknowledged');
-  await frames(10, []);
+  await frames(20, []);
 });
