@@ -144,8 +144,9 @@ app.post('/api/frames', (req, res) => {
   if (!jpegBase64) return res.status(400).json({ error: 'missing jpegBase64' });
   latestFrame = { frameId, jpegBase64, ts: Date.now() };
 
-  // Attach a snapshot to the most recent open incident lacking one.
-  const pending = [...incidents].reverse().find(i => i.status === 'open' && !i.snapshotPath);
+  // Attach a snapshot to the oldest open incident lacking one (oldest-first
+  // so bursts don't starve earlier incidents).
+  const pending = incidents.find(i => i.status === 'open' && !i.snapshotPath);
   if (pending) {
     const snapPath = `data/snapshots/incident-${pending.id}.jpg`;
     fs.writeFileSync(path.join(SNAPSHOT_DIR, `incident-${pending.id}.jpg`),

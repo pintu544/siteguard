@@ -1,1 +1,1 @@
-{"dependencies":{"express":"^4.19.2","socket.io":"^4.7.5"},"description":"SiteGuard API server + policy engine — Stage I proposal prototype","main":"server.js","name":"siteguard-server","scripts":{"start":"node server.js"},"version":"0.1.0"}
+{"dependencies":{"express":"^4.19.2","socket.io":"^4.7.5","socket.io-client":"^4.8.4"},"description":"SiteGuard API server + policy engine — Stage I proposal prototype","main":"server.js","name":"siteguard-server","scripts":{"start":"node server.js"},"version":"0.1.0"}

@@ -44,6 +44,8 @@ def parse_args():
     p.add_argument("--conf", type=float, default=0.35,
                    help="detection confidence threshold (default 0.35)")
     p.add_argument("--model", default=MODEL_PATH, help="path to .pt weights")
+    p.add_argument("--imgsz", type=int, default=480,
+                   help="inference image size (default 480; 640 is ~9x slower on CPU)")
     return p.parse_args()
 
 
@@ -81,7 +83,7 @@ def main():
             continue
         processed += 1
 
-        results = model.predict(frame, conf=args.conf, verbose=False)[0]
+        results = model.predict(frame, imgsz=args.imgsz, conf=args.conf, verbose=False)[0]
         persons, hardhats = [], []
         for box in results.boxes:
             cls = model.names[int(box.cls[0])]

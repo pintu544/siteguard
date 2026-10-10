@@ -25,7 +25,11 @@ Findings that grill/spec/design answers depend on. Rule 12: if it isn't written 
   - Primary: `coverr-construction-worker-walking-6415` (1080p, 5.4MB) — https://cdn.coverr.co/videos/coverr-construction-worker-walking-6415/1080p.mp4
   - Alternate: `coverr-construction-workers-454` (1080p, 6.0MB) — https://cdn.coverr.co/videos/coverr-construction-workers-454/1080p.mp4
   - License: Coverr Commercial-Use License (royalty-free, no attribution). Clips are NOT committed to the repo (downloaded at demo time; URLs documented here).
-- **Inference verification:** pending venv install completion (torch download slow through proxy); will run on /tmp/test-worker.jpg before T1 sign-off.
+- **Inference verification:** ✅ 2026-10-10 ~08:25 UTC — ran on real images via ultralytics:
+  - Welder photo (Wikimedia, green hard hat): Person 0.67 (hard hat missed — noted as model limitation)
+  - Coverr clip 1 mid-frame: Person 0.88, Safety Vest 0.80, Hardhat 0.49 → compliant path
+  - Coverr clip 2 mid-frame: NO-Hardhat 0.90, Person 0.86/0.81/0.80, Hardhat 0.53 → violation path (ideal demo clip)
+  - Selected demo clip: `coverr-construction-workers-454` (shows both compliant and violation states)
 
 ## Technical leads (to verify in T1 spike — NOT yet verified)
 - `ultralytics` pip package provides YOLOv8n pretrained weights (`yolov8n.pt`) with no training needed. Source: https://docs.ultralytics.com — verify install + inference latency on the build laptop during T1.
