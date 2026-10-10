@@ -61,6 +61,47 @@ def bbox_overlap(a, b):
     return inter / min(area_a, area_b)
 
 
+# --- Lightweight person tracking -------------------------------------------
+# Greedy bbox-overlap matching across processed frames. Gives each visible
+# person a stable trackId so the server's "N consecutive frames" confirmation
+# genuinely refers to the same person, not just "someone in the zone".
+# Stage I scope: no ReID embeddings, no Kalman filter — overlap is enough at
+# the processed frame rates we run.
+TRACK_OVERLAP = 0.3   # min overlap to match a detection to an existing track
+TRACK_MAX_MISSED = 10  # drop a track after this many processed frames unseen
+
+_tracks = []
+_next_track_id = 1
+
+
+def match_tracks(person_bboxes):
+    """Assign a stable trackId to each person bbox. Returns list of trackIds
+    aligned with person_bboxes."""
+    global _next_track_id
+    unmatched = list(_tracks)
+    track_ids = []
+    for bbox in person_bboxes:
+        best, best_ov = None, 0.0
+        for t in unmatched:
+            ov = bbox_overlap(bbox, t["bbox"])
+            if ov > best_ov:
+                best, best_ov = t, ov
+        if best is not None and best_ov >= TRACK_OVERLAP:
+            best["bbox"] = bbox
+            best["missed"] = 0
+            unmatched.remove(best)
+            track_ids.append(best["id"])
+        else:
+            new = {"id": _next_track_id, "bbox": bbox, "missed": 0}
+            _next_track_id += 1
+            _tracks.append(new)
+            track_ids.append(new["id"])
+    for t in unmatched:
+        t["missed"] += 1
+    _tracks[:] = [t for t in _tracks if t["missed"] <= TRACK_MAX_MISSED]
+    return track_ids
+
+
 def main():
     args = parse_args()
     model = YOLO(args.model)
@@ -97,13 +138,15 @@ def main():
             # overlapping the person is what marks a violation.
 
         detections = []
-        for person in persons:
+        track_ids = match_tracks([p["bbox"] for p in persons])
+        for person, track_id in zip(persons, track_ids):
             worn = any(bbox_overlap(person["bbox"], h["bbox"]) > 0.15
                        for h in hardhats)
             detections.append({
                 "bbox": [round(v, 1) for v in person["bbox"]],
                 "hardHat": worn,
                 "confidence": round(person["confidence"], 3),
+                "trackId": track_id,
                 # Provenance label: real inference, third-party pretrained model.
                 "method": "pretrained-ppe-model",
             })

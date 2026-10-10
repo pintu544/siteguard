@@ -21,7 +21,8 @@ const fs = require('fs');
 const { Server } = require('socket.io');
 
 const PORT = process.env.PORT || 3000;
-const DATA_DIR = path.join(__dirname, '..', 'data');
+// Overridable for tests so they don't touch the real incident log.
+const DATA_DIR = process.env.SITEGUARD_DATA_DIR || path.join(__dirname, '..', 'data');
 const INCIDENTS_FILE = path.join(DATA_DIR, 'incidents.json');
 const SNAPSHOT_DIR = path.join(DATA_DIR, 'snapshots');
 
@@ -55,13 +56,14 @@ let incidents = loadIncidents();
 let nextId = incidents.reduce((m, i) => Math.max(m, i.id || 0), 0) + 1;
 
 // Per-zone episode state (single logical "Zone A" for Stage I).
-// One continuous violation = ONE episode = ONE incident. The incident
-// escalates in place as the violation persists, and the episode closes only
-// after the violation genuinely clears. A later, separate violation opens a
-// new incident. Episode state is in-memory; the incident log persists.
+// Episodes are keyed by person trackId: one continuous violation by the SAME
+// person = ONE episode = ONE incident. The incident escalates in place as
+// the violation persists, and the episode closes only after that person's
+// violation genuinely clears. A different person violating later opens their
+// own incident. Episode state is in-memory; the incident log persists.
 const zoneState = {
   name: 'Zone A',
-  episode: null, // { violationFrames, clearStreak, incidentId } | null
+  episodes: {}, // trackId -> { violationFrames, clearStreak, incidentId }
 };
 
 function severityFor(violationFrames) {
@@ -96,13 +98,15 @@ app.post('/api/incidents/:id/ack', (req, res) => {
 app.get('/api/provenance', (req, res) => res.json({ detection: DETECTION_PROVENANCE }));
 
 /**
- * PERCEIVE -> REASON -> ACT.
- * One continuous violation opens exactly ONE incident (after CONFIRM_FRAMES
- * consecutive violation frames — single-frame flicker never raises an alert).
- * While the violation persists, the SAME incident escalates warning -> alert
- * -> critical. The episode closes after CLEAR_FRAMES consecutive clean
- * frames, marking the incident resolved. A later, separate violation opens a
- * new incident.
+ * PERCEIVE -> REASON -> ACT (per tracked person).
+ * One continuous violation by the SAME person (stable trackId from the
+ * worker's lightweight tracker) opens exactly ONE incident, after
+ * CONFIRM_FRAMES consecutive frames — single-frame flicker never raises an
+ * alert. While that person's violation persists, the SAME incident escalates
+ * warning -> alert -> critical. The episode closes after CLEAR_FRAMES
+ * consecutive frames without that person violating, marking the incident
+ * resolved. A different person (or the same person, later) violating anew
+ * opens a new incident.
  */
 app.post('/api/detections', (req, res) => {
   const { frameId, persons = [] } = req.body || {};
@@ -110,9 +114,12 @@ app.post('/api/detections', (req, res) => {
   stats.persons = persons.length;
   stats.frames += 1;
 
-  let ep = zoneState.episode;
-  if (violators.length > 0) {
-    if (!ep) ep = zoneState.episode = { violationFrames: 0, clearStreak: 0, incidentId: null };
+  const seenTracks = new Set();
+  for (const v of violators) {
+    const tid = v.trackId != null ? String(v.trackId) : '?';
+    seenTracks.add(tid);
+    let ep = zoneState.episodes[tid];
+    if (!ep) ep = zoneState.episodes[tid] = { violationFrames: 0, clearStreak: 0, incidentId: null };
     ep.violationFrames += 1;
     ep.clearStreak = 0;
 
@@ -122,8 +129,9 @@ app.post('/api/detections', (req, res) => {
         ts: new Date().toISOString(),
         zone: zoneState.name,
         type: 'missing_hard_hat',
+        trackId: v.trackId != null ? v.trackId : null,
         frames: CONFIRM_FRAMES,
-        violators: violators.length,
+        violators: 1,
         severity: 'warning',
         snapshotPath: null, // attached by /api/frames when the frame arrives
         status: 'open',
@@ -136,9 +144,9 @@ app.post('/api/detections', (req, res) => {
       io.emit('alert', {
         incidentId: incident.id,
         severity: 'warning',
-        message: `${violators.length} person(s) without hard hat in ${zoneState.name} — WARNING (incident #${incident.id})`,
+        message: `Person #${incident.trackId} without hard hat in ${zoneState.name} — WARNING (incident #${incident.id})`,
       });
-      console.log(`[policy] incident #${incident.id} opened (warning) — ${violators.length} violator(s)`);
+      console.log(`[policy] incident #${incident.id} opened (warning) — person #${incident.trackId}`);
     } else if (ep.incidentId) {
       const inc = incidents.find(i => i.id === ep.incidentId);
       const sev = severityFor(ep.violationFrames);
@@ -150,12 +158,18 @@ app.post('/api/detections', (req, res) => {
         io.emit('alert', {
           incidentId: inc.id,
           severity: sev,
-          message: `Incident #${inc.id} escalated to ${sev.toUpperCase()} — violation persists in ${zoneState.name}`,
+          message: `Incident #${inc.id} escalated to ${sev.toUpperCase()} — person #${inc.trackId} still without hard hat in ${zoneState.name}`,
         });
         console.log(`[policy] incident #${inc.id} escalated to ${sev}`);
       }
     }
-  } else if (ep) {
+  }
+
+  // Episodes whose person did not violate in this frame accumulate clear
+  // streak; a genuinely cleared violation resolves its incident.
+  for (const tid of Object.keys(zoneState.episodes)) {
+    if (seenTracks.has(tid)) continue;
+    const ep = zoneState.episodes[tid];
     ep.clearStreak += 1;
     if (ep.clearStreak >= CLEAR_FRAMES) {
       const inc = incidents.find(i => i.id === ep.incidentId);
@@ -166,7 +180,7 @@ app.post('/api/detections', (req, res) => {
         io.emit('incident', inc);
         console.log(`[policy] incident #${inc.id} resolved — violation cleared`);
       }
-      zoneState.episode = null;
+      delete zoneState.episodes[tid];
     }
   }
 
