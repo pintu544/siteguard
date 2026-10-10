@@ -31,9 +31,10 @@ problem section "one real-world anchor stat with source" + references section
 - **Hansung-Cho/yolov8-ppe-detection** — YOLOv8n fine-tuned for PPE detection
   (Person, Hardhat, No-Hardhat, Safety Vest, No-Safety Vest, Mask, No-Mask,
   ~10 classes). Reported validation mAP@0.50 = 0.744, precision 0.831.
-- **License: MIT** — declared via `license:mit` tag on the model card
-  (verified 2026-10-10 via HF API; model README itself disclaims that training
-  data licenses follow their original providers — worth one honesty line in deck).
+- **Repository tag:** MIT, declared via `license:mit` on the model page
+  (verified 2026-10-10). Do not call this full production clearance: the model
+  card says training-data licenses follow their original providers but does
+  not enumerate the datasets.
 - Model page: https://huggingface.co/Hansung-Cho/yolov8-ppe-detection
 - Citation given on card: Cho, Hansung. "YOLOv8 PPE Detection – End-to-End AI
   System for Safety Monitoring." Hugging Face Model Hub, 2025.
@@ -42,8 +43,19 @@ problem section "one real-world anchor stat with source" + references section
 
 ## Footage license reference
 
-- Coverr clips (already in spec/research.md): Coverr Commercial-Use License —
-  royalty-free, no attribution required, cleared for commercial use.
+- Coverr clips (already in `spec/research.md`): Coverr's current license permits
+  commercial and non-commercial use without required attribution, subject to
+  restrictions (including no AI training/dataset use). SiteGuard uses the clip
+  only as a demo inference input: https://coverr.co/license.
+
+## Runtime license reference
+
+- The worker uses the Ultralytics package. Ultralytics documents AGPL-3.0 for
+  open-source use and an Enterprise licensing path for proprietary/commercial
+  deployment: https://www.ultralytics.com/license.
+- Deck wording should state these facts and the model-training-data uncertainty;
+  it should not offer a legal conclusion. The project-level MIT file covers
+  SiteGuard-authored source only.
 
 ## Platform reference (HW/SW architecture section)
 
@@ -59,3 +71,13 @@ problem section "one real-world anchor stat with source" + references section
 
 - Ultralytics YOLOv8 docs: https://docs.ultralytics.com ; source:
   https://github.com/ultralytics/ultralytics
+
+## Internal performance evidence
+
+- Verified 2026-10-10 on the local Windows laptop: primary sample clip,
+  `--skip 8 --imgsz 480`, 33 processed frames at worker-reported 1.4 processed
+  FPS with demo-only escalation thresholds of 10/15. Three incidents ended
+  alert/critical/warning and the critical transition persisted in that run.
+  A later full-launcher run reached 2.3 processed FPS, so the deck uses 1.4 as
+  the conservative baseline. Treat these as single-machine observations, not
+  a generic benchmark, fixed incident count, or latency measurement.

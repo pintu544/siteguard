@@ -5,7 +5,8 @@ Reads a video file (or webcam with --webcam), runs real YOLOv8 PPE inference
 via ultralytics, and POSTs detection events + annotated frames to the API server.
 
 Detection provenance (honesty label): hard-hat classification comes from the
-third-party pretrained model Hansung-Cho/yolov8-ppe-detection (MIT license).
+third-party pretrained model Hansung-Cho/yolov8-ppe-detection. Third-party
+runtime, model, and source-dataset terms are documented separately.
 Person + hard-hat boxes are real model inference; the *policy* (violation
 confirmation, escalation) lives in the Node API server, not here.
 
@@ -24,7 +25,8 @@ import cv2
 import requests
 from ultralytics import YOLO
 
-# Third-party pretrained PPE model (MIT). Downloaded separately; see README.
+# Third-party pretrained PPE model. Downloaded separately; see README and
+# THIRD_PARTY_NOTICES.md for runtime, model, and training-data caveats.
 # https://huggingface.co/Hansung-Cho/yolov8-ppe-detection
 MODEL_PATH = "models/ppe-yolov8n.pt"
 
@@ -47,7 +49,7 @@ def parse_args():
                    help="detection confidence threshold (default 0.35)")
     p.add_argument("--model", default=MODEL_PATH, help="path to .pt weights")
     p.add_argument("--imgsz", type=int, default=480,
-                   help="inference image size (default 480; 640 is ~9x slower on CPU)")
+                   help="inference image size (default 480)")
     return p.parse_args()
 
 

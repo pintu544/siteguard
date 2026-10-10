@@ -1,98 +1,93 @@
-# Demo tuning — SiteGuard Stage I video (verified 2026-10-10, re-verified after per-track episode policy)
+# Demo tuning — SiteGuard Stage I
 
-## Key finding
+Verified on October 10, 2026 after the per-track episode-policy changes.
 
-Both Coverr clips are ~10–11s long (clip1: 10.0s, clip2: 11.2s), so there is no
-60–90s continuous segment to select. The 60s demo window (demo-script 0:45–1:45)
-is filled by **one fast clip pass (~8s of live incident action)** followed by
-narrated walkthrough of the populated dashboard (incident table, snapshot,
-acknowledge, escalation story).
+## Evidence-based settings
 
-## Recommended settings (verified)
+| Setting | Demo value | Evidence |
+|---|---:|---|
+| Confidence | `0.35` | Preserves the useful PPE detections in the selected clip |
+| Frame skip | `8` | Produces 33 processed frames from the selected clip and enough samples for confirmation/escalation |
+| Inference size | `480` | A conservative Windows-laptop verification measured 33 processed frames at 1.4 processed FPS |
+| Confirmation | `5` frames | Normal policy default; covered by integration tests |
+| Clip escalation | alert `10`, critical `15` | Explicit demo-only launcher settings so the short clip can show the arc |
+| Normal escalation | alert `15`, critical `30` | Server defaults for manual/webcam runs |
+| Resolution | `20` clear frames | Server default |
 
-| Flag | Value | Why |
-|------|-------|-----|
-| `--conf` | 0.35 (default) | Detections are high-confidence; raising to 0.5/0.6 changed nothing |
-| `--skip` | 8 | Best balance: each violating person gets one incident with the escalation arc |
-| `--imgsz` | 480 (default) | ~6 fps end-to-end on the 2-CPU build VM (decode-bound; inference itself ≈16 fps) |
+A comparison run at `--imgsz 320` measured only 0.9 processed FPS on the same
+laptop. It is therefore not presented as a universal speed optimization. No
+per-stage timings or browser-render latency were instrumented.
 
-Rejected: `--skip 2` → incident flood (noisy table); `--skip 12` → thinner story;
-`--skip 16` → too thin. `--conf 0.5/0.6` → no meaningful change.
+## Recommended clean launch
 
-## Exact run sequence (Pintu: run verbatim while recording)
-
-One command (recommended):
-```
-./demo.sh            # Linux/macOS — tuned demo clip
-demo.bat             :: Windows (cmd)
-.\demo.ps1           # Windows (PowerShell)
+```bash
+./demo.sh --reset
 ```
 
-Manual, if you prefer — Terminal 1, server (from repo root):
-```
-cd ~/workspace/siteguard
-PORT=3000 node server/server.js
+```powershell
+.\demo.ps1 -ResetData
 ```
 
-Terminal 2 — worker (**must run from inside vision-worker/** — the model path is relative):
-```
-cd ~/workspace/siteguard/vision-worker
-./venv/bin/python worker.py --video ../.tmp/demo-clip.mp4 --server http://localhost:3000 --conf 0.35 --skip 8 --imgsz 480
+```bat
+demo.bat --reset
 ```
 
-Dashboard (open BEFORE starting the worker, full-window for the recording):
+The reset option archives prior evidence under `.tmp/data-backup-*`; it does
+not delete it. All launchers reject an occupied port 3000, start the server and
+worker, open the browser, and keep the dashboard live after clip EOF. Press
+`Ctrl+C` after inspecting snapshots, acknowledging an incident, and exporting
+CSV.
+
+## Manual equivalent
+
+Terminal 1 from the repository root:
+
+```bash
+PORT=3000 ESCALATE_ALERT_FRAMES=10 ESCALATE_CRITICAL_FRAMES=15 node server/server.js
 ```
-http://localhost:3000
+
+Terminal 2 from `vision-worker/`:
+
+```bash
+./venv/bin/python worker.py --video ../.tmp/demo-clip.mp4 \
+  --server http://localhost:3000 --conf 0.35 --skip 8 --imgsz 480
 ```
 
-## What the incident narrative looks like (new per-track episode policy)
+On Windows, use `venv\Scripts\python.exe` and set the three environment
+variables with PowerShell or use the provided launcher.
 
-One pass of the clip produces **one incident per violating person** (typically
-4–5), each **escalating in place** warning → alert → critical as that person's
-violation persists — instead of the old behavior of six separate incidents for
-one continuous violation. Verified 2026-10-10: e.g. track 1 → critical,
-track 5 → critical, track 3 → alert, track 6 → warning. Exact counts vary
-slightly run to run with detection variance; the per-person arc is stable.
+## Narrative to demonstrate
 
-Narrate it as: "the policy loop confirms the SAME person for 5 consecutive
-frames, opens one incident, and escalates it while the violation persists —
-no alarm floods, no single-frame false alarms."
+The worker assigns lightweight overlap-based `trackId` values. The policy must
+observe five consecutive violation frames for one track before opening an
+incident. A continuous episode updates that same incident rather than flooding
+the table. Severity changes are persisted in `transitions[]`; acknowledgement
+is retained, and the incident resolves after 20 processed frames without that
+tracked violation. If the server stops first, its next startup records a
+terminal `session_interrupted` transition instead of reviving a stale alert.
 
-## 60-second recording choreography
+Exact person tracks and incident counts may vary slightly with inference. Do
+not script a claim such as “six incidents.” Rehearse on the recording laptop
+and show the lifecycle that actually appears.
 
-- **0:00–0:10** — Dashboard open, log empty. Start the worker. Bounding boxes
-  appear; "NO HARD HAT" labels track the violators.
-- **0:10–0:20** — Incidents open (warning) and escalate to alert/critical.
-  Narrate the 5-frame same-person confirmation rule as the first banner fires.
-- **0:20–0:45** — Worker finished; dashboard is now a populated evidence board.
-  Click an incident → snapshot opens. Acknowledge one. Hit "Export CSV".
-  Point at the severity column: "the policy loop, not the detector, is the product."
-- **0:45–0:60** — Honesty beat: gesture at the SIMULATION badge — "laptop,
-  pretrained detector, rule-based loop; Thunderstorm silicon is Stage II."
+Suggested 60-second screen-recording beat:
 
-## Before recording (Pintu)
+- Begin with the clean dashboard and start the clip.
+- Narrate same-track confirmation when the first warning appears.
+- Show an incident escalating in place rather than multiplying.
+- After clip EOF, open a snapshot, acknowledge an active incident, and export
+  CSV while the launcher intentionally keeps the server alive.
+- Close with the visible simulation/provenance label and Stage II boundary.
 
-```
-cd ~/workspace/siteguard
-rm -f data/incidents.json data/snapshots/*.jpg
-```
-The log must start empty — it fills only from the live run (honesty rule).
+## Provenance and limitations
 
-## Footage provenance (for README/deck references slide)
-
-- Clip: `coverr-construction-workers-454` (1080p), Coverr royalty-free
-  commercial-use license, no attribution required, no watermark.
-- Local copy: `.tmp/demo-clip.mp4` — **gitignored, never commit**.
-- Download URL (if re-needed): https://cdn.coverr.co/videos/coverr-construction-workers-454/1080p.mp4
-- Alternate clip (unused): `coverr-construction-worker-walking-6415`,
-  https://cdn.coverr.co/videos/coverr-construction-worker-walking-6415/1080p.mp4
-
-## Caveats
-
-- `--webcam` flag exists but was **not tested** (no camera on this machine) —
-  Pintu must verify it on his laptop before the webcam-prop take.
-- Server policy knobs: `CONFIRM_FRAMES=5`, `CLEAR_FRAMES=20`,
-  `ESCALATE_ALERT_FRAMES=15`, `ESCALATE_CRITICAL_FRAMES=30` (env-overridable).
-- End-to-end fps is decode-bound on weak CPUs (~6 fps on the 2-CPU build VM);
-  inference itself runs ≈16 fps. Fine for screen recording; measure on the
-  recording laptop, and fall back to `--skip 12 --imgsz 320` if needed.
+- Primary clip: `coverr-construction-workers-454`, downloaded to the ignored
+  `.tmp/demo-clip.mp4` path.
+- Coverr’s current license applies; the clip is an inference-demo input, not
+  training data. See `THIRD_PARTY_NOTICES.md`.
+- The webcam path requires a physical-camera preflight and is not verified by
+  automated tests.
+- The tracker is lightweight bounding-box overlap, not biometric identity or
+  production-grade re-identification.
+- The verified 1.4 processed-FPS result is one machine/run, not a promise for
+  all laptops or the Thunderstorm platform.

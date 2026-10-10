@@ -6,7 +6,7 @@
  * README and deck). LLM-based incident summarization is a Stage II item.
  *
  * Endpoints:
- *   POST /api/detections  { frameId, ts, persons: [{ bbox, hardHat, confidence, method }] }
+ *   POST /api/detections  { frameId, ts, persons: [{ bbox, hardHat, confidence, method, trackId }] }
  *   POST /api/frames       { frameId, jpegBase64 }
  *   GET  /api/incidents    -> persisted incident array
  *   POST /api/incidents/:id/ack -> mark acknowledged
@@ -35,7 +35,8 @@ const ESCALATE_CRITICAL_FRAMES = parseInt(process.env.ESCALATE_CRITICAL_FRAMES |
 // Detection provenance label — shown verbatim in the dashboard (honesty rule).
 const DETECTION_PROVENANCE =
   'Person + hard-hat detection: third-party pretrained model ' +
-  'Hansung-Cho/yolov8-ppe-detection (MIT). Policy loop: rule-based (Stage I).';
+  'Hansung-Cho/yolov8-ppe-detection; third-party terms apply. ' +
+  'Policy loop: rule-based (Stage I).';
 
 fs.mkdirSync(path.dirname(INCIDENTS_FILE), { recursive: true });
 fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
@@ -72,6 +73,36 @@ function severityFor(violationFrames) {
   return 'warning';
 }
 
+function appendTransition(incident, event, at = new Date().toISOString()) {
+  if (!Array.isArray(incident.transitions)) incident.transitions = [];
+  incident.transitions.push({
+    at,
+    event,
+    status: incident.status,
+    severity: incident.severity,
+  });
+}
+
+// Episode counters live in memory and cannot be reconstructed safely from the
+// audit log. If the server restarts mid-violation, close the prior session's
+// active records as "interrupted" instead of presenting them as currently
+// active or falsely claiming the hazard was observed to clear.
+function reconcileInterruptedIncidents() {
+  const interruptedAt = new Date().toISOString();
+  let changed = false;
+  for (const incident of incidents) {
+    if (incident.status !== 'open' && incident.status !== 'acknowledged') continue;
+    incident.status = 'interrupted';
+    incident.interruptedAt = interruptedAt;
+    incident.interruptionReason = 'server_restart';
+    appendTransition(incident, 'session_interrupted', interruptedAt);
+    changed = true;
+  }
+  if (changed) saveIncidents(incidents);
+}
+
+reconcileInterruptedIncidents();
+
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, '..', 'dashboard')));
@@ -88,12 +119,18 @@ app.get('/api/incidents', (req, res) => res.json(incidents));
 
 // One-click audit export: the incident log as CSV (opens in Excel/Sheets).
 app.get('/api/incidents/export', (req, res) => {
-  const cols = ['id', 'timestamp', 'zone', 'type', 'trackId', 'severity', 'status', 'resolvedAt'];
+  const cols = [
+    'id', 'timestamp', 'zone', 'type', 'trackId', 'severity', 'status',
+    'acknowledgedAt', 'resolvedAt', 'interruptedAt', 'transitions',
+  ];
   const esc = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
   const lines = [cols.join(',')];
   for (const i of incidents) {
-    lines.push([i.id, i.ts, i.zone, i.type, i.trackId, i.severity, i.status, i.resolvedAt]
-      .map(esc).join(','));
+    lines.push([
+      i.id, i.ts, i.zone, i.type, i.trackId, i.severity, i.status,
+      i.acknowledgedAt, i.resolvedAt, i.interruptedAt,
+      JSON.stringify(i.transitions || []),
+    ].map(esc).join(','));
   }
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename="siteguard-incidents.csv"');
@@ -103,7 +140,15 @@ app.get('/api/incidents/export', (req, res) => {
 app.post('/api/incidents/:id/ack', (req, res) => {
   const inc = incidents.find(i => i.id === Number(req.params.id));
   if (!inc) return res.status(404).json({ error: 'not found' });
-  inc.status = 'acknowledged';
+  if (inc.status !== 'open' && inc.status !== 'acknowledged') {
+    return res.status(409).json({ error: 'incident is not active' });
+  }
+  const acknowledgedAt = inc.acknowledgedAt || new Date().toISOString();
+  inc.acknowledgedAt = acknowledgedAt;
+  if (inc.status !== 'acknowledged') {
+    inc.status = 'acknowledged';
+    appendTransition(inc, 'acknowledged', acknowledgedAt);
+  }
   saveIncidents(incidents);
   io.emit('incident', inc); // rebroadcast updated incident
   res.json(inc);
@@ -139,9 +184,10 @@ app.post('/api/detections', (req, res) => {
     ep.clearStreak = 0;
 
     if (!ep.incidentId && ep.violationFrames >= CONFIRM_FRAMES) {
+      const openedAt = new Date().toISOString();
       const incident = {
         id: nextId++,
-        ts: new Date().toISOString(),
+        ts: openedAt,
         zone: zoneState.name,
         type: 'missing_hard_hat',
         trackId: v.trackId != null ? v.trackId : null,
@@ -151,6 +197,12 @@ app.post('/api/detections', (req, res) => {
         snapshotPath: null, // attached by /api/frames when the frame arrives
         status: 'open',
         provenance: 'rule-based policy engine (Stage I)',
+        transitions: [{
+          at: openedAt,
+          event: 'opened',
+          status: 'open',
+          severity: 'warning',
+        }],
       };
       incidents.push(incident);
       saveIncidents(incidents);
@@ -166,8 +218,10 @@ app.post('/api/detections', (req, res) => {
       const inc = incidents.find(i => i.id === ep.incidentId);
       const sev = severityFor(ep.violationFrames);
       if (inc && sev !== inc.severity) {
+        const escalatedAt = new Date().toISOString();
         inc.severity = sev;
-        inc.escalatedAt = new Date().toISOString();
+        inc.escalatedAt = escalatedAt;
+        appendTransition(inc, 'severity_changed', escalatedAt);
         saveIncidents(incidents);
         io.emit('incident', inc);
         io.emit('alert', {
@@ -185,12 +239,17 @@ app.post('/api/detections', (req, res) => {
   for (const tid of Object.keys(zoneState.episodes)) {
     if (seenTracks.has(tid)) continue;
     const ep = zoneState.episodes[tid];
+    // Confirmation is deliberately consecutive: any non-violation frame
+    // breaks an unconfirmed streak instead of carrying it across a gap.
+    if (!ep.incidentId) ep.violationFrames = 0;
     ep.clearStreak += 1;
     if (ep.clearStreak >= CLEAR_FRAMES) {
       const inc = incidents.find(i => i.id === ep.incidentId);
-      if (inc && inc.status === 'open') {
+      if (inc && (inc.status === 'open' || inc.status === 'acknowledged')) {
+        const resolvedAt = new Date().toISOString();
         inc.status = 'resolved';
-        inc.resolvedAt = new Date().toISOString();
+        inc.resolvedAt = resolvedAt;
+        appendTransition(inc, 'resolved', resolvedAt);
         saveIncidents(incidents);
         io.emit('incident', inc);
         console.log(`[policy] incident #${inc.id} resolved — violation cleared`);
@@ -209,7 +268,8 @@ app.post('/api/frames', (req, res) => {
 
   // Attach a snapshot to the oldest open incident lacking one (oldest-first
   // so bursts don't starve earlier incidents).
-  const pending = incidents.find(i => i.status === 'open' && !i.snapshotPath);
+  const pending = incidents.find(i =>
+    (i.status === 'open' || i.status === 'acknowledged') && !i.snapshotPath);
   if (pending) {
     const snapPath = `data/snapshots/incident-${pending.id}.jpg`;
     fs.writeFileSync(path.join(SNAPSHOT_DIR, `incident-${pending.id}.jpg`),

@@ -86,6 +86,8 @@
 <script>
 const socket = io();
 const feed = document.getElementById('feed');
+const incidentState = new Map();
+const alertMessages = new Map();
 
 socket.on('frame', (f) => {
   feed.src = 'data:image/jpeg;base64,' + f.jpegBase64;
@@ -98,22 +100,46 @@ socket.on('stats', (s) => {
 socket.on('provenance', (p) => {
   document.getElementById('provenance').textContent = '⚖️ ' + p.detection;
 });
-socket.on('alert', (a) => {
+
+function renderActiveAlerts() {
   const box = document.getElementById('alerts');
-  const empty = box.querySelector('.empty');
-  if (empty) empty.remove();
-  const div = document.createElement('div');
-  div.className = 'alert ' + a.severity;
-  div.innerHTML = `<b>${a.severity.toUpperCase()}</b> — ${a.message}`;
-  box.prepend(div);
-  document.getElementById('zone-dot').classList.add('bad');
-  document.getElementById('zone-status').textContent = 'violation active';
-  setTimeout(() => {
-    document.getElementById('zone-dot').classList.remove('bad');
-    document.getElementById('zone-status').textContent = 'compliant';
-  }, 15000);
+  const active = [...incidentState.values()]
+    .filter((inc) => inc.status === 'open' || inc.status === 'acknowledged')
+    .sort((a, b) => b.id - a.id);
+
+  box.replaceChildren();
+  if (active.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = 'No active alerts.';
+    box.appendChild(empty);
+  } else {
+    for (const inc of active) {
+      const severity = ['warning', 'alert', 'critical'].includes(inc.severity)
+        ? inc.severity : 'warning';
+      const div = document.createElement('div');
+      div.className = 'alert ' + severity;
+      const title = document.createElement('b');
+      title.textContent = severity.toUpperCase();
+      const fallback = `Incident #${inc.id}: person #${inc.trackId ?? '?'} without a hard hat in ${inc.zone}`;
+      div.append(title, ' — ' + (alertMessages.get(inc.id) || fallback));
+      box.appendChild(div);
+    }
+  }
+
+  const hasActiveViolation = active.length > 0;
+  document.getElementById('zone-dot').classList.toggle('bad', hasActiveViolation);
+  document.getElementById('zone-status').textContent = hasActiveViolation
+    ? `${active.length} active violation${active.length === 1 ? '' : 's'}`
+    : 'compliant';
+}
+
+socket.on('alert', (a) => {
+  alertMessages.set(a.incidentId, a.message);
+  renderActiveAlerts();
 });
 function renderIncident(inc) {
+  incidentState.set(inc.id, inc);
   document.getElementById('log-empty').style.display = 'none';
   const table = document.getElementById('log-table');
   table.style.display = '';
@@ -132,9 +158,14 @@ function renderIncident(inc) {
     `<td>${inc.type}</td><td><span class="sev ${inc.severity}">${inc.severity}</span></td>` +
     `<td>${inc.status}</td>` +
     `<td>${inc.status === 'open' ? `<button class="ack" onclick="ack(${inc.id})">Acknowledge</button>` : ''}</td>`;
+  renderActiveAlerts();
 }
 socket.on('incident', renderIncident);
-socket.on('incidents', (list) => list.forEach(renderIncident));
+socket.on('incidents', (list) => {
+  incidentState.clear();
+  list.forEach(renderIncident);
+  renderActiveAlerts();
+});
 function ack(id) {
   fetch('/api/incidents/' + id + '/ack', { method: 'POST' });
 }

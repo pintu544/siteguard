@@ -4,7 +4,8 @@
 **Team:** Pintu Kumar (solo) · **Stage I deadline:** Oct 14, 2026, 14:30 IST
 **Repo:** https://github.com/pintu544/siteguard
 
-17 slides total (≤20-page cap respected). One section per slide: title, bullets, speaker notes.
+17 slides total (≤20-page cap respected). One section per slide: title, bullets,
+speaker notes. **This file is draft content, not a final PDF/PPTX submission.**
 
 ---
 
@@ -60,7 +61,7 @@
 ## Slide 5 — Intended tools & methods (overview)
 
 **Commodity perception, original policy loop — built on a proven stack.**
-- Perception: YOLOv8 PPE detection (pretrained, open weights, MIT license)
+- Perception: third-party YOLOv8 PPE weights through the Ultralytics runtime (licensing caveats disclosed, not treated as production-cleared)
 - Reasoning: deterministic policy engine — N-frame confirmation + zone escalation
 - Transport: Express + Socket.IO real-time pipeline, vanilla-JS dashboard
 - Data: JSON incident log + frame snapshots — human-inspectable, no database needed
@@ -72,14 +73,15 @@
 
 ## Slide 6 — Perception: real inference, named model
 
-**Person + hard-hat detection runs real neural inference — not a mock.**
+**Person + hard-hat detection runs real neural inference—not a mock.**
 - Model: `Hansung-Cho/yolov8-ppe-detection` (YOLOv8-compatible, `best.pt` 6.25 MB)
-- License: MIT — explicitly declared on the model card, verified before use
+- Provenance: the Hugging Face repository is tagged MIT; its card leaves source-dataset licenses with unnamed original providers, so production data-license clearance is unresolved
+- Runtime: Ultralytics documents AGPL-3.0 for open-source use and an Enterprise path for proprietary/commercial deployments
 - Classes include Person, Hardhat, No-Hardhat, Safety Vest (~10 total); hard-hat presence = Hardhat box overlapping Person box
 - Verified on real images: construction clip frames detect Person 0.88 / Vest 0.80 / Hardhat 0.49; a No-Hardhat frame scores 0.90 — both the compliant and violation paths confirmed
 - Known limitation (stated, not hidden): on one test photo the model found the person (0.67) but missed a green hard hat — edge cases like this are exactly what the N-frame confirmation exists to absorb
 
-> Speaker notes: Naming the model + license + a disclosed miss is the honesty flex. Judges in this track know detectors are imperfect; showing you measured the failure mode and engineered around it (next slide) is stronger than claiming 99% accuracy.
+> Speaker notes: Naming the model, runtime, license caveats, and a disclosed miss is the honesty flex. Judges in this track know detectors are imperfect; showing a measured failure mode and engineering around flicker (next slide) is stronger than claiming 99% accuracy.
 
 ---
 
@@ -87,24 +89,24 @@
 
 **Deterministic in Stage I — every rule is code you can read, no black boxes.**
 - PERCEIVE: vision worker posts per-frame detections (person boxes + hard-hat flags)
-- REASON: violation confirmed only after **N = 5 consecutive frames** of the same person without a hard hat (configurable); repeats per zone escalate **warning → alert → critical**
-- ACT: WebSocket broadcast to dashboard, incident appended to log with snapshot, webhook hook-point for future SMS/email
+- REASON: violation confirmed only after **N = 5 consecutive processed frames** on the same lightweight track (configurable); one episode escalates in place **warning → alert → critical** and resolves after 20 clear processed frames
+- ACT: Socket.IO broadcast to the dashboard, incident + transition history persisted, snapshot saved, CSV export available
 - Why deterministic, not an LLM planner, in Stage I: a safety system must be explainable — "the 5th consecutive frame triggered it" is an auditable reason; Stage II adds LLM incident *summaries*, never LLM *decisions*
 
 > Speaker notes: This is the Innovation-criterion slide (30%). Hammer the distinction: the loop is stateful and explainable. LLM-as-decider would be a liability story; LLM-as-summarizer in Stage II is the responsible upgrade path.
 
 ---
 
-## Slide 8 — Real-time pipeline & incident record
+## Slide 8 — Measured pipeline & incident record
 
-**From photon to banner in under 2 seconds — and everything is logged.**
+**A measured prototype with an inspectable evidence trail.**
 - Transport: annotated JPEG frames + detection JSON over HTTP (worker → server); live feed, alerts, and incidents over Socket.IO (server → dashboard)
-- Alert-latency design target: **< 2 s** from violation confirmation to dashboard banner
-- Measured throughput: **9.9 FPS end-to-end** at 480p inference on a laptop CPU (frame-skipping keeps the budget honest)
-- Every confirmed incident persists: `{ id, timestamp, zone, type, frame count, snapshot path, status }` — the log starts empty and fills only from real pipeline runs
-- Dashboard: live annotated feed, per-zone compliance chips, alert stack, incident table with acknowledge buttons — zero build step
+- Conservative verified baseline: **33 processed frames at 1.4 processed FPS** on the Windows laptop (`--skip 8 --imgsz 480`); one run, not a generic laptop benchmark
+- Alert latency and per-stage timing are **not instrumented**, so no latency claim is made
+- Every confirmed incident persists current state plus lifecycle transitions; the log starts empty and fills only from pipeline runs
+- Dashboard: live annotated feed, zone status, alert stack, incident table, acknowledgement, snapshot links, and CSV export—zero build step
 
-> Speaker notes: 9.9 FPS is the measured number — say "≈10 FPS measured at 480p" and move on. The <2s is a design target; do not present it as measured. The empty-log-fills-from-real-runs line is the Practical Value story (25%).
+> Speaker notes: Say exactly what was measured: 33 processed frames at 1.4 processed FPS on this laptop. Do not turn one run into a broad hardware claim, and do not quote alert latency. The empty log filling from the live pipeline is the Practical Value story.
 
 ---
 
@@ -114,10 +116,10 @@
 
 | Component | Status |
 |---|---|
-| Person + hard-hat detection | Real inference — third-party pretrained YOLOv8 model (MIT), not trained by us |
+| Person + hard-hat detection | Real inference—third-party YOLOv8 PPE weights, not trained by us; repository/runtime/training-data licensing caveats disclosed |
 | N-frame confirmation, escalation, incident log | Real — our policy-engine code |
-| Alert latency, dashboard, snapshots | Real — WebSocket on localhost |
-| Input footage | Sample — royalty-free Coverr stock clips (commercial-use license, no attribution required), not a live site |
+| Dashboard, snapshots, CSV export | Real—localhost pipeline; end-to-end alert latency is not instrumented |
+| Input footage | Sample — downloaded Coverr stock clip, not a live site; current license/provenance notes are disclosed in `THIRD_PARTY_NOTICES.md` |
 | "Agent" reasoning | Rule-based in Stage I (labeled as such); LLM reasoning is Stage II |
 | Deployment | Laptop in Stage I; Thunderstorm VM is the Stage II target |
 
@@ -127,24 +129,26 @@
 
 ## Slide 10 — Expected outcomes: Stage I
 
-**By Oct 14: a working loop on a laptop, measured and auditable.**
-- ✅ Working prototype: video file (or webcam) → detection → confirmed violations → live dashboard → incident log
-- ✅ Measured numbers: ≈10 FPS @ 480p, <2s alert-latency design, N=5 confirmation, 3-level escalation — all documented in the README
-- ✅ Demo video (≤3 min): the loop running on sample construction footage, both compliant and violation states shown
-- ✅ Public repo with setup instructions a reviewer can follow
+**Built now, with submission packaging still to finish.**
+- ✅ Working clip prototype: video → detection → per-track confirmation → live dashboard → incident log, snapshots, acknowledgement, resolution, CSV export
+- ✅ Policy integration tests: 8/8, including clean-frame reset, in-place escalation history, acknowledged → resolved behavior, and restart interruption handling
+- ✅ One conservative local throughput observation documented: 33 processed frames at 1.4 processed FPS; latency remains unmeasured
+- ✅ Public repo with setup instructions and one-command launchers after one-time setup
+- 🟡 Deck content and recording runbook drafted; no final PDF/PPTX is claimed
+- ⏳ Record, upload, and verify the required ≤3-minute unlisted YouTube video
 - What Stage I deliberately does NOT claim: multi-camera, LLM reasoning, cloud hosting, Thunderstorm deployment
 
-> Speaker notes: Checkboxes = done-or-dated. Every "expected" here is either already measured (FPS) or a dated deliverable (video, repo). Nothing on this slide is a wish.
+> Speaker notes: The symbols are literal: checks are verified repo artifacts, yellow is draft-only, and the video remains pending. Do not show a final-deck or final-video check until the actual file/link exists.
 
 ---
 
 ## Slide 11 — Expected outcomes: Stage II (if shortlisted)
 
 **The same loop, ported to Thunderstorm silicon — Nov 6 → Dec 4.**
-- Port the pipeline to the organizer-provided VM (Intel Arc Pro B70, 32 GB, up to 367 TOPS INT8) — the current CPU-bound 10 FPS becomes headroom for higher resolution and more streams
+- Port and benchmark the pipeline on the organizer-provided VM (Intel Arc Pro B70, 32 GB, up to 367 TOPS INT8); do not project a speedup before measuring it
 - Multi-camera input with per-zone mapping (Stage I is a single logical zone)
 - LLM incident *summarization* over the auditable log (decisions stay rule-based)
-- Alert integrations: SMS / email / push via the webhook hook-point already in the architecture
+- Add and test SMS / email / push integrations (no outbound webhook exists in Stage I)
 - Site-specific fine-tuning of the detector on real site footage
 - Final: ≤10-min demo running on the designated platform + full repo with architecture diagram and performance validation data
 
@@ -185,13 +189,13 @@ video file / webcam
 ## Slide 13 — Data flow & API contracts
 
 **Typed at every boundary — the loop is inspectable, not magic.**
-- Detection (transient, per frame): `{ frameId, ts, persons: [{ bbox, hardHat: bool, confidence }] }`
-- Incident (persisted): `{ id, ts, zone, type: "missing_hard_hat", frames, snapshotPath, status: open|acknowledged }`
+- Detection (transient, per frame): `{ frameId, ts, persons: [{ bbox, hardHat: bool, confidence, trackId }] }`
+- Incident (persisted): `{ id, ts, zone, type, trackId, frames, severity, snapshotPath, status, acknowledgedAt?, resolvedAt?, interruptedAt?, transitions[] }`
 - Alert (transient broadcast): `{ incidentId, severity: warning|alert|critical, message }`
 - `POST /api/detections` → 202 (policy engine evaluates) · `POST /api/frames` → 202 (rebroadcast)
-- `GET /api/incidents` (dashboard initial load) · `POST /api/incidents/:id/ack` (acknowledge button)
+- `GET /api/incidents` (dashboard initial load) · `GET /api/incidents/export` (CSV) · `POST /api/incidents/:id/ack` (acknowledge button)
 - Socket.IO server→client: `frame`, `alert`, `incident`, `stats` (fps, persons-in-frame)
-- Knobs: `CONFIRM_FRAMES=5`, `ESCALATE_AFTER=3`, `--skip N`, `--conf 0.35`, `--imgsz 480`
+- Knobs: `CONFIRM_FRAMES=5`, `CLEAR_FRAMES=20`, `ESCALATE_ALERT_FRAMES=15`, `ESCALATE_CRITICAL_FRAMES=30`, `--skip N`, `--conf 0.35`, `--imgsz 480`
 
 > Speaker notes: This slide is for the technical judges. The contracts show the system was designed, not demoed-into-existence. Mention the knobs line — configurability signals engineering maturity.
 
@@ -201,12 +205,12 @@ video file / webcam
 
 **The whole system runs on commodity hardware today — that is the feasibility argument.**
 - One laptop, three processes, all localhost; no cloud, no GPU, no special hardware
-- Prerequisites: Python 3.12, Node.js 18+, `pip`, `npm` — setup documented in the README, reviewer path ≤15 minutes
-- Model weights (6.25 MB, MIT) download once from Hugging Face; excluded from the repo via `.gitignore` — nothing proprietary is smuggled in
-- 480p inference keeps a laptop CPU at ≈10 FPS; 640p is ~9× slower on CPU, so 480p is the documented operating point (frame-skipping available)
+- Prerequisites: Python 3.12, Node.js 18+, `pip`, `npm`; setup is documented, but fresh-machine setup time has not been independently measured
+- Model weights (~6.25 MB) download once from Hugging Face and are excluded from the repo; third-party licensing and training-data caveats are explicit
+- Conservative verified baseline on this Windows laptop: 33 processed frames at 1.4 processed FPS with `--skip 8 --imgsz 480`; other machines must be measured rather than estimated
 - No secrets in the repo; footage downloaded at demo time from documented URLs
 
-> Speaker notes: "Runs on a laptop today" is the entire 35% Commercial Potential & Feasibility argument for Stage I: if it works here, it flies on 367 TOPS. The gitignore/weights line answers the licensing question before it's asked.
+> Speaker notes: "Runs on a laptop today" is the core Stage I feasibility evidence. Treat the 367-TOPS figure only as the target platform's published capability; make no speedup claim until the pipeline is ported and benchmarked there. The gitignore/weights line opens the licensing discussion rather than pretending it is settled.
 
 ---
 
@@ -216,7 +220,7 @@ video file / webcam
 - Vision worker → Intel Arc Pro B70 (32 GB VRAM, up to 367 TOPS INT8): higher inference resolution, multiple concurrent streams, headroom for larger detector variants
 - API server + dashboard unchanged in structure; multi-zone mapping and multi-camera fan-in added
 - LLM summarizer sidecar (new box): reads the incident log, writes natural-language shift summaries — advisory only, never in the decision path
-- Alert integrations (SMS/email/push) attach at the existing webhook hook-point
+- SMS/email/push requires a new integration component; Stage I has no outbound webhook
 - Deployment: organizer-provided VM + SDV system access (no hardware shipping on the Thunderstorm track); finals judged remotely on the designated platform
 - What changes vs. Stage I: scale and silicon — the loop's logic is already proven on the laptop
 
@@ -227,8 +231,9 @@ video file / webcam
 ## Slide 16 — References
 
 - Ultralytics YOLOv8 documentation — https://docs.ultralytics.com
-- PPE detection model: `Hansung-Cho/yolov8-ppe-detection` (MIT) — https://huggingface.co/Hansung-Cho/yolov8-ppe-detection
-- Sample footage: Coverr royalty-free clips, Commercial-Use License (no attribution required) — `coverr-construction-workers-454`, `coverr-construction-worker-walking-6415`
+- PPE detection model: `Hansung-Cho/yolov8-ppe-detection` (repository tagged MIT; source-dataset licenses not enumerated) — https://huggingface.co/Hansung-Cho/yolov8-ppe-detection
+- Ultralytics licensing (AGPL-3.0 / Enterprise paths) — https://www.ultralytics.com/license
+- Sample footage: Coverr clips used as demo input under the current Coverr license—https://coverr.co/license—`coverr-construction-workers-454`, `coverr-construction-worker-walking-6415`
 - ASUS UGen AI League official rules — https://contest.bhuntr.com/en/39jg9vimiynrhlksze/home/
 - Intel Arc Pro B70 / Thunderstorm platform brief (organizer-provided at Stage II)
 - Socket.IO, Express.js documentation (pipeline transport)
@@ -240,8 +245,8 @@ video file / webcam
 ## Slide 17 — Code documentation & repo
 
 **Everything is public, documented, and labeled.**
-- 🔗 **https://github.com/pintu544/siteguard** (public, MIT)
-- README covers: architecture, setup, how to run, the measured numbers (9.9 FPS @ 480p, <2s alert-latency design target), and the full real-vs-simulated table
+- 🔗 **https://github.com/pintu544/siteguard** (public; MIT applies to SiteGuard-authored source, with third-party terms disclosed separately)
+- README covers architecture, setup, launchers, the verified 1.4 processed-FPS run, the absence of a latency measurement, policy tests, and the full real-vs-simulated table
 - Reproduce the demo from a fresh terminal following only the README — that is the documented acceptance bar
 - Honesty statement (also in the README and the UI): Stage I is a laptop proposal prototype — real pretrained inference, rule-based policy loop, sample footage; LLM reasoning and Thunderstorm deployment are explicitly Stage II
 - IP note: per the official rules, winners grant ASUS/Intel/Hailo a perpetual royalty-free license to the winning entry — acknowledged and accepted at entry

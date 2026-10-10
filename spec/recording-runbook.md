@@ -1,124 +1,146 @@
 # Recording runbook — SiteGuard Stage I demo video (Pintu's laptop)
 
-**Video spec (from the official rules):** ≤3 minutes, YouTube visibility "Anyone with the link".
-**Stage I deadline:** Oct 14, 2026, 14:30 IST (17:00 Taipei time). Plan: setup anytime,
-test run Oct 13, record + submit Oct 14 morning.
+**Video requirement:** English narration, no more than 3 minutes, uploaded to
+YouTube as "Anyone with the link."
+**Stage I deadline:** October 14, 2026, 14:30 IST (17:00 Taipei time).
+
+The final video and YouTube link are manual submission artifacts. This file is
+the reproducible recording procedure; it does not claim that either artifact
+already exists.
 
 ---
 
-## 1. One-time laptop setup (~15 min, do it before Oct 13)
+## 1. One-time setup
 
-Prerequisites: Python 3.12, Node.js 18+, git. Then:
+Prerequisites: Python 3.12, Node.js 18+, Git, npm, and curl. Setup duration has
+not been independently measured, so allow plenty of time before recording day.
+
+Linux/macOS:
 
 ```bash
 git clone https://github.com/pintu544/siteguard.git
-cd siteguard
-
-# Vision worker
-cd vision-worker
+cd siteguard/vision-worker
 python3 -m venv venv
-./venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
-./venv/bin/pip install ultralytics opencv-python-headless requests numpy
-
-# PPE model weights (MIT, ~6 MB) — NOT in the repo, download once:
+./venv/bin/pip install -r requirements.txt
 mkdir -p models
 curl -L -o models/ppe-yolov8n.pt \
   https://huggingface.co/Hansung-Cho/yolov8-ppe-detection/resolve/main/best.pt
-
-# API server
 cd ../server
 npm install
 ```
 
-(On Windows: run the same steps in Git Bash; if torch errors, follow the CPU
-wheel instructions at pytorch.org — the ultralytics package handles the rest.)
+Windows PowerShell, from the repository root:
 
-## 2. Preflight — verify once, before recording day
-
-The `--webcam` path was **never tested** (the build machine has no camera).
-Do this smoke test so there are no surprises on camera:
-
-```bash
-# Terminal 1
-cd siteguard && node server/server.js          # → http://localhost:3000
-
-# Terminal 2 (open http://localhost:3000 full-window first)
-cd siteguard/vision-worker
-./venv/bin/python worker.py --webcam --server http://localhost:3000 --conf 0.35 --skip 8 --imgsz 480
+```powershell
+uv venv --python 3.12 vision-worker\venv
+uv pip install --python .\vision-worker\venv\Scripts\python.exe `
+  -r .\vision-worker\requirements.txt
+New-Item -ItemType Directory -Force vision-worker\models | Out-Null
+Invoke-WebRequest `
+  'https://huggingface.co/Hansung-Cho/yolov8-ppe-detection/resolve/main/best.pt' `
+  -OutFile 'vision-worker\models\ppe-yolov8n.pt'
+Push-Location server
+npm install
+Pop-Location
 ```
 
-Put on the hard-hat prop, walk in and out of frame. You should see bounding
-boxes + "NO HARD HAT" labels when the prop is off, incidents landing in the log
-table, and the banner escalating warning → alert → critical. If the camera
-fails to open: close any app holding the camera (Meet/Zoom/Teams), grant the
-terminal camera permission in OS settings, retry. Ctrl+C both terminals when done.
+The PPE repository is tagged MIT, but the runtime and source-dataset licensing
+have separate caveats. Read `THIRD_PARTY_NOTICES.md`; do not describe the whole
+stack as unconditionally "MIT" or "commercially cleared."
 
-## 3. Recording-day sequence (verbatim)
+## 2. Preflight before recording day
 
-Two shots, in this order:
-
-### Shot A — screen recording (the money shot, ~60s of footage)
+Run the deterministic clip once:
 
 ```bash
-# 0. Reset the evidence board — the log must start empty
-cd siteguard
-echo "[]" > data/incidents.json
-rm -f data/snapshots/*.jpg
-
-# 1. Server
-node server/server.js
-
-# 2. Dashboard — open http://localhost:3000 FULL-WINDOW, log visibly empty
-
-# 3. Worker (from inside vision-worker/ — the model path is relative)
-cd vision-worker
-./venv/bin/python worker.py --video ../.tmp/demo-clip.mp4 --server http://localhost:3000 --conf 0.35 --skip 8 --imgsz 480
-# (first run downloads the royalty-free Coverr clip automatically)
+./demo.sh --reset
 ```
 
-Narrate the 60s choreography (from demo-tuning):
-- **0:00–0:10** — log empty → bounding boxes appear, "NO HARD HAT" labels track violators.
-- **0:10–0:20** — 6 incidents land (warning, warning, alert, alert, alert, critical),
-  ~1.3s apart. Narrate the 5-frame confirmation rule as the first banner fires.
-- **0:20–0:45** — worker finished; the dashboard is a populated evidence board.
-  Click an incident → snapshot opens. Acknowledge one. "The policy loop, not the
-  detector, is the product."
-- **0:45–0:60** — honesty beat: point at the STAGE I PROTOTYPE · SIMULATION badge —
-  "laptop, pretrained detector, rule-based loop; Thunderstorm silicon is Stage II."
+```powershell
+.\demo.ps1 -ResetData
+```
 
-If the incident pacing feels rushed on camera, fall back to `--skip 12`
-(4 slower incidents: warning, warning, alert, alert).
+```bat
+demo.bat --reset
+```
 
-### Shot B — webcam with hard-hat prop (~15–20s)
+`--reset` / `-ResetData` is recoverable: prior incident evidence is moved to a
+timestamped `.tmp/data-backup-*` directory. The launcher refuses to attach to
+an existing process on port 3000. After the clip finishes, the dashboard stays
+open so you can inspect snapshots, acknowledge an incident, and export CSV.
+Press `Ctrl+C` in the launcher terminal only after the walkthrough is complete.
 
-Use the preflighted `--webcam` setup. One continuous take: you, on camera,
-wearing the prop, then removing it — the dashboard behind/beside you (or
-picture-in-picture) shows the "NO HARD HAT" label and alert firing in real time.
-This is the opening hook ("a worker without a hard hat is invisible until
-someone walks past with a clipboard") or the closer. Keep it under 20s.
+The webcam path depends on the physical laptop and is not verified by the
+repository checks. Test it separately before promising it in the recording:
 
-## 4. Full video structure (budget 2:30 of the 3:00 cap)
+```powershell
+.\demo.ps1 -Webcam -ResetData
+```
+
+Put on and remove the hard-hat prop. Confirm that the camera opens, person
+tracks remain reasonably stable, and an incident appears only after five
+consecutive processed violation frames. Close Meet, Zoom, or Teams and grant
+camera permission if OpenCV cannot open device 0.
+
+## 3. Recording-day sequence
+
+1. Close any process using port 3000.
+2. Connect power, close CPU-heavy applications, and set the browser zoom so
+   the feed, active alerts, and incident table are visible together.
+3. Start screen recording at 1080p.
+4. Run the clean launcher for your OS, for example:
+
+   ```powershell
+   .\demo.ps1 -ResetData
+   ```
+
+5. Let the clip complete. The verified settings are `--conf 0.35 --skip 8
+   --imgsz 480`; clip mode explicitly uses demo-only escalation thresholds of
+   10 and 15 processed violation frames. Normal server defaults remain 15/30.
+6. While the server remains open, show a snapshot, acknowledge one active
+   incident, and export CSV.
+7. Point to the `STAGE I PROTOTYPE · SIMULATION` and provenance labels.
+8. Press `Ctrl+C` in the launcher terminal to stop both process trees.
+
+Detection and tracking can vary slightly between runs. Do not memorize an
+exact incident count. Rehearse once on the recording laptop and narrate the
+observable story: five consecutive frames for the same track, one incident per
+continuous episode, escalation in place, human acknowledgement, and resolution
+after the violation genuinely clears.
+
+## 4. Suggested 2:30 video structure
 
 | Time | Beat |
-|------|------|
-| 0:00–0:20 | The problem — Shot B (webcam prop) or slides |
-| 0:20–0:45 | The concept — one architecture slide (camera → vision-worker → policy engine → dashboard) |
-| 0:45–1:45 | Live demo — Shot A screen recording, narrated |
-| 1:45–2:15 | Honesty beat — laptop + pretrained detector + rule-based loop, labeled throughout; Stage II on Thunderstorm |
-| 2:15–2:30 | Close — repo link on screen: github.com/pintu544/siteguard. "SiteGuard: the safety officer that never blinks." |
+|---|---|
+| 0:00–0:20 | Problem: manual PPE checks are intermittent and unauditable |
+| 0:20–0:45 | Concept: camera → worker → deterministic policy → evidence dashboard |
+| 0:45–1:45 | Live clip: bounding boxes, confirmation, escalation, snapshot, acknowledgement, CSV export |
+| 1:45–2:15 | Honesty: stock footage, third-party detector, rule-based decisions, measured local throughput; Thunderstorm work is Stage II |
+| 2:15–2:30 | Public repository and close: “SiteGuard: the safety officer that never blinks.” |
 
-Recording notes: 1080p screen capture, dashboard full-window, mic check before
-the take, sample clip pre-downloaded so the demo starts instantly. One take per
-shot is fine — this is a proposal video, not a film.
+If the webcam preflight is reliable, use a 10–15 second prop shot as the
+opening hook. Otherwise use a problem slide; the deterministic clip is the
+primary Stage I demonstration.
 
-## 5. Troubleshooting
+## 5. Claims allowed in narration
+
+- Real pretrained PPE inference is running locally.
+- The policy and incident lifecycle are implemented and integration-tested.
+- The verification laptop processed 33 sampled frames at 1.4 processed FPS in
+  one `--skip 8 --imgsz 480` run.
+- End-to-end alert latency has **not** been instrumented.
+- The demo is not a certified safety system and does not automate penalties.
+- Thunderstorm deployment and performance are Stage II plans, not current
+  measurements.
+
+## 6. Troubleshooting
 
 | Symptom | Fix |
-|---------|-----|
-| `vision-worker/venv` missing | You skipped setup step 1 — run it once |
-| Worker: model file not found | Weights must be at `vision-worker/models/ppe-yolov8n.pt`; worker must run from inside `vision-worker/` |
-| Camera won't open | Close Meet/Zoom/Teams; grant camera permission to the terminal in OS settings |
-| Port 3000 busy | Another server instance is running — kill it, or `PORT=3001 node server/server.js` (then `--server http://localhost:3001`) |
-| Dashboard shows old incidents | You forgot the reset step (section 3.0) — the log fills only from live runs |
-| torch install is slow | Normal — CPU wheel is ~200 MB; let it finish |
-| Laptop fans screaming | Expected on CPU inference (~4 fps wall-clock at 480p); close Chrome tabs, keep the charger plugged in |
+|---|---|
+| Virtual environment missing | Complete the one-time setup using the OS-specific path above |
+| Model file missing | Put weights at `vision-worker/models/ppe-yolov8n.pt` |
+| Camera will not open | Close camera apps, grant permission, and retry device 0 |
+| Port 3000 occupied | Stop the existing process; the launcher intentionally refuses to attach |
+| Old incidents visible | Use the recoverable reset option and note the printed backup directory |
+| Torch installation is slow | The CPU wheel is large; complete setup before recording day |
+| Throughput differs | Quote only the recording laptop’s measured processed FPS; CPU and power mode matter |
