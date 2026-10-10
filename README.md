@@ -129,6 +129,19 @@ bottleneck. If your machine is slower, use `--skip 12` and/or `--imgsz 320`.
 Measure on your own hardware before quoting a number — laptop results vary
 widely with CPU, thermals, and power settings.
 
+**Detection accuracy:** we did not hand-label our own eval set (a 30-frame
+self-graded eval would be weak evidence). The model author reports on the
+validation set: mAP@0.50 **0.744**, precision **0.831**, recall **0.685**
+(source: the [model card](https://huggingface.co/Hansung-Cho/yolov8-ppe-detection)).
+Our contribution is the policy loop on top, which is covered by
+`server/test/policy.test.js` (6/6: flicker rejection, same-person
+confirmation, one-incident-per-violation, in-place escalation, resolution,
+acknowledgement).
+
+**Confirmation latency:** 5 consecutive processed frames at the measured
+≈6 fps ≈ **0.8 s** from violation start to incident open (plus <100 ms
+alert broadcast over localhost WebSocket).
+
 ## What is real vs. simulated
 
 | Component | Status |
