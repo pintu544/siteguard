@@ -39,9 +39,11 @@ video file / webcam
   `--webcam`), runs YOLOv8 PPE inference per processed frame, draws
   bounding boxes, POSTs detection JSON + annotated JPEG frames to the server.
 - **server/** (Node.js + Express + Socket.IO, port 3000): the policy engine —
-  confirms violations only after **N consecutive frames** (default 5),
-  escalates repeats per zone (**warning → alert → critical**), broadcasts
-  over WebSocket, persists incidents to `data/incidents.json`.
+  one continuous violation opens exactly **one incident** (confirmed after
+  **N consecutive frames**, default 5); the incident **escalates in place**
+  (**warning → alert → critical**) while the violation persists and is marked
+  **resolved** once it genuinely clears. Broadcasts over WebSocket, persists
+  incidents to `data/incidents.json`.
 - **dashboard/** (single `index.html`, vanilla JS): live annotated feed,
   zone-compliance chips, alert banners, incident-log table with acknowledge
   buttons. No build step.
@@ -97,18 +99,23 @@ Webcam instead of a file:
 
 Knobs: `--skip N` (process every Nth frame), `--conf 0.35` (confidence),
 `--imgsz 480` (inference size; 640 is ~9x slower on CPU).
-Server env: `CONFIRM_FRAMES=5`, `ESCALATE_AFTER=3`, `PORT=3000`.
+Server env: `CONFIRM_FRAMES=5`, `CLEAR_FRAMES=10`,
+`ESCALATE_ALERT_FRAMES=15`, `ESCALATE_CRITICAL_FRAMES=30`, `PORT=3000`.
 
-**Measured performance (laptop CPU):** ≈10 fps end-to-end at 480p inference
-(9.9 fps measured). Frame-skipping keeps CPU budgets honest.
+**Measured performance:** ≈10–16 fps end-to-end at 480p inference on the
+build machine (multi-core x86_64 CPU; per-stage medians: inference 48 ms,
+JPEG encode 7 ms, localhost POSTs 8 ms). On slower laptops expect less —
+frame-skipping (`--skip 8`) and a smaller inference size (`--imgsz 320`)
+are the supported tuning knobs; see `spec/demo-tuning.md`. Measure on your
+own hardware before quoting a number.
 
 ## What is real vs. simulated
 
 | Component | Status |
 |---|---|
 | Person + hard-hat detection | **Real inference** — third-party pretrained YOLOv8 model (`Hansung-Cho/yolov8-ppe-detection`, MIT). Not trained by us. |
-| Violation confirmation (N consecutive frames) | **Real** — our policy engine code. |
-| Escalation warning → alert → critical | **Real** — our policy engine code. |
+| Violation confirmation (N consecutive frames) | **Real** — our policy engine code. One continuous violation = one incident. |
+| Escalation warning → alert → critical | **Real** — our policy engine code. Escalates in place as the violation persists; incident marked resolved when it clears. |
 | Incident log + snapshots | **Real** — written by real pipeline runs; starts empty. |
 | Alert latency / dashboard | **Real** — WebSocket, localhost. |
 | Input footage | **Sample** — royalty-free Coverr stock clip (commercial-use license, no attribution required). Not a live site. |
